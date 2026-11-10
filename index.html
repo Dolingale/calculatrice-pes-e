@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f2a37">
+<title>Pesée</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #111827; --card: #1f2a37; --line: #374151;
+    --text: #f3f4f6; --muted: #9ca3af; --accent: #f59e0b; --danger: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px; padding-bottom: 40px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+    max-width: 480px; margin-inline: auto;
+  }
+  h1 { font-size: 1.2rem; margin: 4px 0 16px; display: flex; justify-content: space-between; align-items: center; }
+  h1 button { font-size: .9rem; }
+  label { display: block; color: var(--muted); font-size: .9rem; margin: 16px 0 8px; }
+  button {
+    font: inherit; color: var(--text); background: var(--card);
+    border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; cursor: pointer;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 12px 14px; text-align: left; }
+  .chip small { display: block; color: var(--muted); }
+  .chip.on { border-color: var(--accent); background: #3a2d10; }
+  input {
+    font: inherit; width: 100%; color: var(--text); background: var(--card);
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  }
+  #total { font-size: 2rem; text-align: center; }
+  .results { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+  .res { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; text-align: center; }
+  .res .t { color: var(--muted); font-size: .9rem; }
+  .res .v { font-size: 2.2rem; font-weight: 700; color: var(--accent); margin: 6px 0; }
+  .res .d { color: var(--muted); font-size: .8rem; }
+  .info { text-align: center; color: var(--muted); margin-top: 14px; min-height: 1.2em; }
+  .err { color: var(--danger); }
+  #edit { display: none; }
+  .row { display: flex; gap: 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .row span { flex: 1; }
+  .row .del { color: var(--danger); padding: 6px 12px; }
+  .add { display: grid; grid-template-columns: 1fr 100px auto; gap: 8px; margin-top: 12px; }
+  .add input { padding: 10px; }
+</style>
+</head>
+<body>
+
+<section id="calc">
+  <h1>Pesée <button id="toEdit">Récipients</button></h1>
+
+  <label>Récipient</label>
+  <div class="chips" id="chips"></div>
+
+  <label for="total">Poids sur la balance (g)</label>
+  <input id="total" type="number" inputmode="decimal" placeholder="1040" autocomplete="off">
+
+  <div class="results">
+    <div class="res"><div class="t">Nourriture ÷ 2</div><div class="v" id="r2">–</div><div class="d" id="d2"></div></div>
+    <div class="res"><div class="t">Nourriture ÷ 3</div><div class="v" id="r3">–</div><div class="d" id="d3"></div></div>
+  </div>
+  <div class="info" id="info"></div>
+</section>
+
+<section id="edit">
+  <h1>Récipients <button id="toCalc">OK</button></h1>
+  <div id="list"></div>
+  <form class="add" id="addForm">
+    <input id="newName" placeholder="Nom" required>
+    <input id="newWeight" type="number" inputmode="decimal" placeholder="g" required>
+    <button>+</button>
+  </form>
+</section>
+
+<script>
+const DEFAULTS = [
+  { name: "Casserole", weight: 560 },
+  { name: "Saladier avec rebord", weight: 1000 },
+  { name: "Saladier sans rebord", weight: 900 },
+];
+const KEY = "pesee.recipients";
+const SEL = "pesee.selected";
+
+let recipients = JSON.parse(localStorage.getItem(KEY) || "null") || DEFAULTS;
+let selected = Number(localStorage.getItem(SEL) || 0);
+
+const $ = id => document.getElementById(id);
+const save = () => localStorage.setItem(KEY, JSON.stringify(recipients));
+const g = n => Math.round(n) + " g";
+
+function renderChips() {
+  if (selected >= recipients.length) selected = 0;
+  $("chips").innerHTML = "";
+  recipients.forEach((r, i) => {
+    const b = document.createElement("button");
+    b.className = "chip" + (i === selected ? " on" : "");
+    b.innerHTML = `${r.name}<small>${r.weight} g</small>`;
+    b.onclick = () => { selected = i; localStorage.setItem(SEL, i); renderChips(); compute(); $("total").focus(); };
+    $("chips").appendChild(b);
+  });
+}
+
+function compute() {
+  const r = recipients[selected];
+  const total = parseFloat($("total").value);
+  const out = (id, v, d) => { $("r" + id).textContent = v; $("d" + id).textContent = d; };
+  $("info").className = "info";
+
+  if (!r || isNaN(total)) { out(2, "–", ""); out(3, "–", ""); $("info").textContent = ""; return; }
+
+  const food = total - r.weight;
+  if (food < 0) {
+    out(2, "–", ""); out(3, "–", "");
+    $("info").className = "info err";
+    $("info").textContent = "Poids inférieur au récipient (" + r.weight + " g)";
+    return;
+  }
+  out(2, g(r.weight + food / 2), "garder " + g(food / 2));
+  out(3, g(r.weight + food / 3), "garder " + g(food / 3));
+  $("info").textContent = "Nourriture actuelle : " + g(food);
+}
+
+function renderList() {
+  $("list").innerHTML = "";
+  recipients.forEach((r, i) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span>${r.name}</span><span style="flex:0">${r.weight}&nbsp;g</span>`;
+    const del = document.createElement("button");
+    del.className = "del"; del.textContent = "✕";
+    del.onclick = () => {
+      if (!confirm("Supprimer « " + r.name + " » ?")) return;
+      recipients.splice(i, 1); save(); renderList();
+    };
+    row.appendChild(del);
+    $("list").appendChild(row);
+  });
+}
+
+$("addForm").onsubmit = e => {
+  e.preventDefault();
+  recipients.push({ name: $("newName").value.trim(), weight: parseFloat($("newWeight").value) });
+  save(); renderList();
+  $("newName").value = ""; $("newWeight").value = "";
+};
+
+$("toEdit").onclick = () => { $("calc").style.display = "none"; $("edit").style.display = "block"; renderList(); };
+$("toCalc").onclick = () => { $("edit").style.display = "none"; $("calc").style.display = "block"; renderChips(); compute(); };
+$("total").oninput = compute;
+
+renderChips();
+compute();
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
